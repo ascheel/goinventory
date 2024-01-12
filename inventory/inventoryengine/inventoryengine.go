@@ -27,7 +27,7 @@ type Inventory struct {
 		Count map[string]int `yaml:"count" json:"count"`
 		Timestamp string `yaml:"timestamp" json:"timestamp"`
 	}
-	Database *DB
+	db *DB
 }
 
 var inv *Inventory
@@ -37,17 +37,9 @@ func NewInventory() *Inventory {
 	// Our Singleton
 	invOnce.Do(func() {
 		inv = &Inventory{}
+		inv.db = NewDB()
 	})
 	return inv
-}
-
-type Inventoryer interface {
-	Roll()
-	ReadInventoryFromAWS()
-	AddNew()
-	UpdateExisting()
-	ExportToFile()
-	PrettyPrintInventory()
 }
 
 func (i *Inventory) Roll() error {
@@ -57,16 +49,6 @@ func (i *Inventory) Roll() error {
 	backendFormatter := logging.NewBackendFormatter(backend, format)
 	logging.SetBackend(backendFormatter)
 	logging.SetLevel(logging.DEBUG, "")
-
-	// log.Debug("debug")
-	// log.Info("info")
-	// log.Notice("notice")
-	// log.Warning("warning")
-	// log.Error("err")
-	// log.Critical("crit")
-
-	// Init DB
-	i.Database = NewDB()
 
 	// Now get current state from AWS.
 	i.ReadInventoryFromAWS()
@@ -89,11 +71,11 @@ func (i *Inventory) MarkTerminated() error {
 	// 3) Any from DB that do not exist in AWS instances, flag as terminated
 
 	// Currently on AWS
-	a := NewAWS(i.Database)
+	a := NewAWS()
 	instances := a.GetInstanceList()
 
 	// Currently in Database
-	notTerminated, err := i.Database.GetActiveInstances()
+	notTerminated, err := i.db.GetActiveInstances()
 	if err != nil {
 		return err
 	}
@@ -105,7 +87,7 @@ func (i *Inventory) MarkTerminated() error {
 			needsMarked = append(needsMarked, id1)
 		}
 	}
-	i.Database.FlagInstancesAsTerminated(needsMarked)
+	i.db.FlagInstancesAsTerminated(needsMarked)
 
 	return nil
 }
@@ -181,7 +163,7 @@ func GetFiles(dirname string) []string {
 
 func (i *Inventory) AddNew() error {
 	// Add basic data to i.Instances
-	a := NewAWS(i.Database)
+	a := NewAWS()
 	for key, instance := range a.Instances {
 		_, ok := i.Instances[key]
 		if ok {
@@ -238,11 +220,20 @@ func (i *Inventory) ExportToFile() error {
 	return nil
 }
 
+func (i *Inventory) AddInstancesToDB(instances map[string]Instance) {
+	log.Debug("Adding instances to DB.")
+	for instanceID, instance := range instances {
+		log.Debugf("Adding %s to db\n", instanceID)
+		i.db.AddOrUpdateInstance(instance)
+	}
+}
+
 func (i *Inventory) ReadInventoryFromAWS() {
 	log.Debug("Reading inventory from AWS.")
-	a := NewAWS(i.Database)
-	a.GetInstances()
-	a.AddInstancesToDB()
+	a := NewAWS()
+	instances := a.GetInstances()
+	i.AddInstancesToDB(instances)
+	//a.AddInstancesToDB()
 }
 
 func (i *Inventory) PrettyPrintInventory() error {
@@ -256,6 +247,5 @@ func (i *Inventory) PrettyPrintInventory() error {
 
 func LogAndQuit(text string, err error) {
 	msg := fmt.Sprintf("%s: %v\n", text, err)
-	// log.Fatal(msg)
-	log.Debug(msg)
+	log.Fatal(msg)
 }

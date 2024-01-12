@@ -10,7 +10,6 @@ import (
 	// "log"
 	"errors"
 	"time"
-	"sync"
 )
 
 type DB struct {
@@ -18,15 +17,14 @@ type DB struct {
 	db *sql.DB
 }
 
-var databaseInstance *DB
-var dbOnce sync.Once
-
 func NewDB() *DB {
-	dbOnce.Do(func() {
-		databaseInstance = &DB{dbFilename: "inventory.db"}
-		databaseInstance.Init()
-	})
-	return databaseInstance
+	instance := &DB{dbFilename: "inventory.db"}
+	instance.Init()
+	return instance
+}
+
+func (db *DB) Close() {
+	db.db.Close()
 }
 
 func (db *DB) Init() error {
@@ -183,6 +181,14 @@ func (db *DB) GetActiveInstances() ([]string, error) {
 	return instances, nil
 }
 
+func (db *DB) AddInstancesToDB(instances map[string]Instance) {
+	log.Debug("Adding instances to DB.")
+	for instanceID, instance := range instances {
+		log.Debugf("Adding %s to db\n", instanceID)
+		db.AddOrUpdateInstance(instance)
+	}
+}
+
 func (db *DB) AddOrUpdateInstance(i Instance) {
 	if db.InstanceExists(i) {
 		log.Debug("Updating.")
@@ -202,30 +208,24 @@ func (db *DB) AddInstance(i Instance) {
 		LogAndQuit("Unable to add instance", err)
 	}
 	//defer tx.Commit()
-	// stmt := `
-	// INSERT INTO AWSInstance (
-	// 	Account, AMI, ENV, ID, KeypairName, LaunchTime, Name, Notes, OS, PrivateIP, PublicIP,
-	// 	Region, Size, SSHKey, SSHPort, State, Subnet, User, VPC, LastSeen
-	// ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	log.Debug("Executing.")
-	stmt, err := db.db.Prepare(`
+
+	log.Debug("Preparing.")
+	stmt := `
 	INSERT INTO AWSInstance (
 		Account, AMI, ENV, ID, KeypairName, LaunchTime, Name, Notes, OS, PrivateIP, PublicIP,
 		Region, Size, SSHKey, SSHPort, State, Subnet, User, VPC, LastSeen
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-	if err != nil {
-		log.Debugf("Unable to prepare statement: %v\n", err)
-	}
-	_, err = stmt.Exec(
-		stmt,
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	log.Debug("Executing.")
+	_, err = tx.Exec(stmt,
 		i.Account, i.AMI, i.ENV, i.ID, i.KeypairName, i.LaunchTime, i.Name, i.Notes, i.OS, i.PrivateIP, i.PublicIP,
 		i.Region, i.Size, i.SSHKey, i.SSHPort, i.State, i.Subnet, i.User, i.VPC, time.Now(),
 	)
 	if err != nil {
 		LogAndQuit("Unable to insert instance", err)
 	}
-	stmt.Close()
-	log.Debug("Executed.")
+
+	log.Debug("Committing.")
 	err = tx.Commit()
 	if err != nil {
 		log.Debugf("Error committing: %v\n", err)

@@ -2,7 +2,7 @@ package inventoryengine
 
 import (
 	"context"
-	"sync"
+	//"sync"
 	//"github.com/aws/aws-sdk-go-v2/aws"
 	"errors"
 	"strings"
@@ -18,19 +18,11 @@ type AWS struct {
 	Region string
 	EC2 ec2.Client
 	Instances map[string]Instance
-	db *DB
 }
 
-var awsInstance *AWS
-var awsOnce sync.Once
-
-func NewAWS(db *DB) *AWS {
-	// Our Singleton
-	awsOnce.Do(func() {
-		awsInstance = &AWS{}
-		awsInstance.db = db
-	})
-	return awsInstance
+func NewAWS() *AWS {
+	instance := &AWS{}
+	return instance
 }
 
 type EC2DescribeInstancesAPI interface {
@@ -58,15 +50,7 @@ func (a *AWS) GetInstanceList() ([]string) {
 	return instances
 }
 
-func (a *AWS) AddInstancesToDB() {
-	log.Debug("Adding instances to DB.")
-	for instanceID, instance := range a.Instances {
-		log.Debugf("Adding %s to db\n", instanceID)
-		a.db.AddOrUpdateInstance(instance)
-	}
-}
-
-func (a *AWS) GetInstances() {
+func (a *AWS) GetInstances() map[string]Instance {
 	log.Debug("Getting instances.")
 	c := invconfig.NewConfig("de_test.yml")
 
@@ -86,7 +70,7 @@ func (a *AWS) GetInstances() {
 					config.WithSharedConfigProfile(profile),
 				)
 				if err != nil {
-					return
+					log.Errorf("Unable to set AWS config: %v\n", err)
 				}
 				client := ec2.NewFromConfig(cfg)
 				input := &ec2.DescribeInstancesInput{}
@@ -109,6 +93,7 @@ func (a *AWS) GetInstances() {
 			}
 		}
 	}
+	return a.Instances
 }
 
 func (a *AWS) TranslateInstance(instance types.Instance) Instance {
