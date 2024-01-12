@@ -1,0 +1,10 @@
+go 1.21.3
+
+use (
+	// ./config
+	./inventory
+	//./find
+	// ./inventoryengine
+	// ./sshtest
+	// ./awsinv
+)
