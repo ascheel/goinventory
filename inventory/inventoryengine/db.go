@@ -23,10 +23,6 @@ func NewDB() *DB {
 	return instance
 }
 
-func (db *DB) Close() {
-	db.db.Close()
-}
-
 func (db *DB) Init() error {
 	log.Debug("Database Init")
 	var err error
@@ -159,6 +155,7 @@ func (db *DB) GetActiveInstances() ([]string, error) {
 	if err != nil {
 		return make([]string, 0), err
 	}
+	defer tx.Commit()
 
 	instances := make([]string, 0)
 	
